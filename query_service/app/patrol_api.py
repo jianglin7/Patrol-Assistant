@@ -101,20 +101,20 @@ def simple_assistant_bucket(question: str) -> str:
 
 
 def _try_simple_bucket_answer(tenant_id: str, bucket: str) -> dict[str, Any] | None:
-    """命中分桶时拉库生成简报（synthesize=False，不调二次 LLM）。"""
+    """命中分桶时先查真实数据，再由 LLM 按数据总结回答。"""
     if bucket == "general":
         return None
     try:
         if bucket == "realtime_patrol":
-            data = get_realtime_patrol_brief(tenant_id, synthesize=False)
+            data = get_realtime_patrol_brief(tenant_id, synthesize=True)
         elif bucket == "daily_patrol":
-            data = get_daily_patrol_brief(tenant_id, synthesize=False)
+            data = get_daily_patrol_brief(tenant_id, synthesize=True)
         elif bucket == "realtime_warning":
-            data = get_realtime_warning_brief(tenant_id, synthesize=False)
+            data = get_realtime_warning_brief(tenant_id, synthesize=True)
         elif bucket == "daily_warning":
-            data = get_daily_warning_brief(tenant_id, synthesize=False)
+            data = get_daily_warning_brief(tenant_id, synthesize=True)
         elif bucket == "push_preview":
-            data = get_push_strategy_preview(tenant_id, None, synthesize=False)
+            data = get_push_strategy_preview(tenant_id, None, synthesize=True)
         else:
             return None
     except Exception:
@@ -124,12 +124,12 @@ def _try_simple_bucket_answer(tenant_id: str, bucket: str) -> dict[str, Any] | N
             "data": {},
             "source": "patrol_api_error",
         }
-    brief = str(data.get("brief") or "").strip()
-    if not brief:
+    answer = str(data.get("brief") or "").strip()
+    if not answer:
         return None
     return {
         "intent": bucket,
-        "answer": brief,
+        "answer": answer,
         "data": data,
         "source": "patrol_api",
     }
@@ -244,13 +244,14 @@ def get_realtime_patrol_brief(tenant_id: str, *, synthesize: bool = True) -> dic
     round_txt = (
         f"第{payload['patrol_round']}/{payload['daily_round_total']}轮"
         if payload["daily_round_total"]
-        else f"第{payload['patrol_round']}轮（当日课程无 leti_number 节次编号）"
+        else f"第{payload['patrol_round']}轮"
     )
     fallback = (
         f"实时巡查{round_txt}（进度{payload['patrol_round_progress']}）："
         f"当前{payload['current_section']}共{payload['classroom_count']}个课堂，"
         f"平均到课率{payload['avg_attendance']}%，前排满座率{payload['avg_front_full']}%，抬头率{payload['avg_rise']}%。"
         f"重点关注{payload['focus_classroom_count']}个课堂，活力较高{payload['high_vitality_count']}个课堂。"
+        "\n备注：巡查轮次优先按节次编号计算；若当日无节次编号，则按当日实际课堂进度口径展示。"
     )
     if synthesize:
         payload["brief"] = _summarize("请基于课堂实时巡课指标输出100字以内简报。", payload, fallback)

@@ -1,9 +1,11 @@
+import asyncio
 import json
+from collections.abc import AsyncGenerator
 from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from app.assistant_trace import assistant_trace_store, trace_emit
@@ -24,6 +26,11 @@ from app.service import QueryService
 
 app = FastAPI(title=settings.app_name)
 service = QueryService()
+
+STREAM_THINKING_DELAY_SEC = 0.45
+STREAM_CHAR_DELAY_SEC = 0.02
+STREAM_PRESET_THINKING_DELAY_SEC = 0.9
+STREAM_PRESET_CHAR_DELAY_SEC = 0.05
 
 _cors_origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
 if _cors_origins:
@@ -99,10 +106,23 @@ def video_points(tenant_id: str | None = None, date: str | None = None) -> dict[
 
 
 @app.post("/api/playground/ask-stream")
-def playground_ask_stream(payload: dict[str, str]) -> dict[str, object]:
-    """兼容旧路径；与 /api/playground/ask 相同，一次 JSON。"""
+async def playground_ask_stream(payload: dict[str, str]) -> StreamingResponse:
+    """流式输出 demo 回答（meta -> delta* -> done）。"""
     question = payload.get("question", "")
-    return ask_demo_assistant(question)
+    result = ask_demo_assistant(question)
+    answer = str(result.get("answer", "")).strip()
+    intent = str(result.get("intent", "查询结果"))
+
+    async def event_stream() -> AsyncGenerator[str, None]:
+        yield json.dumps({"type": "meta", "intent": intent}, ensure_ascii=False) + "\n"
+        await asyncio.sleep(STREAM_THINKING_DELAY_SEC)
+        if answer:
+            for ch in answer:
+                yield json.dumps({"type": "delta", "content": ch}, ensure_ascii=False) + "\n"
+                await asyncio.sleep(STREAM_CHAR_DELAY_SEC)
+        yield json.dumps({"type": "done"}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
 @app.post("/api/assistant/ask")
@@ -126,9 +146,52 @@ def assistant_ask(payload: dict[str, str]) -> dict[str, object]:
 
 
 @app.post("/api/assistant/ask-stream")
-def assistant_ask_stream(payload: dict[str, str]) -> dict[str, object]:
-    """兼容旧路径；与 POST /api/assistant/ask 相同，一次 JSON（已取消 NDJSON 流式）。"""
-    return assistant_ask(payload)
+async def assistant_ask_stream(payload: dict[str, str]) -> StreamingResponse:
+    """流式输出（meta -> delta* -> done）。既定问题与通用问题都按字吐出。"""
+    question = payload.get("question", "")
+    tenant_id = str(payload.get("tenant_id") or settings.assistant_default_tenant_id)
+    trace_id: str | None = None
+    if settings.assistant_trace_enabled:
+        trace_id = assistant_trace_store.begin("/api/assistant/ask-stream", question, tenant_id)
+        trace_emit(trace_id, "handler_enter", question_len=len(question or ""))
+
+    async def event_stream() -> AsyncGenerator[str, None]:
+        err: str | None = None
+        try:
+            yield json.dumps({"type": "meta"}, ensure_ascii=False) + "\n"
+            trace_emit(trace_id, "ndjson_meta_sent")
+            await asyncio.sleep(STREAM_THINKING_DELAY_SEC)
+
+            result = await asyncio.to_thread(route_assistant_query, question, tenant_id, trace_id)
+            answer = str(result.get("answer") or "").strip()
+            intent = str(result.get("intent") or "")
+            source = str(result.get("source") or "")
+            trace_emit(trace_id, "stream_result_ready", intent=intent, answer_chars=len(answer))
+
+            if answer:
+                # 命中既定问题（库表简报）时，额外放慢思考与吐字节奏，营造更自然的输出过程
+                char_delay = STREAM_CHAR_DELAY_SEC
+                if source == "patrol_api":
+                    await asyncio.sleep(STREAM_PRESET_THINKING_DELAY_SEC)
+                    char_delay = STREAM_PRESET_CHAR_DELAY_SEC
+                for ch in answer:
+                    yield json.dumps({"type": "delta", "content": ch}, ensure_ascii=False) + "\n"
+                    await asyncio.sleep(char_delay)
+            else:
+                yield json.dumps({"type": "delta", "content": "暂无可用结论。"}, ensure_ascii=False) + "\n"
+
+            yield json.dumps({"type": "done"}, ensure_ascii=False) + "\n"
+            trace_emit(trace_id, "ndjson_done_sent")
+        except Exception as ex:
+            err = str(ex)
+            trace_emit(trace_id, "ndjson_generator_exception", error=repr(ex))
+            yield json.dumps({"type": "delta", "content": "网络异常，回答中断。请重试。"}, ensure_ascii=False) + "\n"
+            yield json.dumps({"type": "done"}, ensure_ascii=False) + "\n"
+        finally:
+            if trace_id:
+                assistant_trace_store.finalize(trace_id, "error" if err else "ok", err)
+
+    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
 _TRACE_DISABLED_DETAIL = (
@@ -573,39 +636,51 @@ def assistant_page() -> str:
       box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12);
     }
     .suggestions {
-      min-height: 108px;
+      min-height: 96px;
       display: flex;
       flex-direction: column;
-      padding: 10px 12px 12px;
-      background: linear-gradient(180deg, #f4f7fc 0%, #eef2f8 100%);
-      border-top: 1px solid #e2e8f0;
-      transition: min-height 0.22s ease, padding 0.22s ease;
+      padding: 8px 12px 10px;
+      background: transparent;
+      border-top: 1px solid rgba(226, 232, 240, 0.55);
+      transition: min-height 0.24s ease, padding 0.24s ease, border-color 0.24s ease;
     }
     .suggestions.collapsed {
-      min-height: 48px;
-      padding-top: 8px;
-      padding-bottom: 8px;
+      min-height: 20px;
+      padding: 5px 10px 6px;
+      border-top-color: rgba(226, 232, 240, 0.35);
     }
     .suggestions-card {
-      border-radius: 14px;
-      padding: 10px 12px 11px;
-      background: rgba(255, 255, 255, 0.92);
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      box-shadow: 0 4px 18px rgba(15, 23, 42, 0.06), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
-      backdrop-filter: blur(8px);
+      border-radius: 12px;
+      padding: 8px 10px 9px;
+      background: rgba(255, 255, 255, 0.42);
+      border: 1px solid rgba(226, 232, 240, 0.65);
+      box-shadow: none;
+      backdrop-filter: blur(6px);
+      transition: padding 0.24s ease, border-color 0.24s ease, background 0.24s ease;
+    }
+    .suggestions.collapsed .suggestions-card {
+      padding: 6px 8px;
+      border-color: rgba(226, 232, 240, 0.45);
+      background: rgba(255, 255, 255, 0.28);
     }
     .suggestions .label {
       width: 100%;
       margin-bottom: 0;
-      padding-bottom: 9px;
-      margin-bottom: 9px;
-      border-bottom: 1px solid #f1f5f9;
-      font-size: 12px;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid rgba(241, 245, 249, 0.9);
+      font-size: 11px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
       flex-wrap: nowrap;
+      transition: margin-bottom 0.22s ease, padding-bottom 0.22s ease, border-color 0.22s ease;
+    }
+    .suggestions.collapsed .label {
+      padding-bottom: 0;
+      margin-bottom: 0;
+      border-bottom-color: transparent;
     }
     .label-main {
       display: inline-flex;
@@ -616,15 +691,15 @@ def assistant_page() -> str:
     .label-pill {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 10px 4px 8px;
-      border-radius: 999px;
-      background: linear-gradient(135deg, #eff6ff 0%, #e8f0fe 100%);
-      border: 1px solid #bfdbfe;
-      box-shadow: 0 1px 2px rgba(37, 99, 235, 0.06);
+      gap: 5px;
+      padding: 2px 0;
+      border-radius: 0;
+      background: transparent;
+      border: none;
+      box-shadow: none;
     }
     .label-icon {
-      font-size: 11px;
+      font-size: 10px;
       color: #3b82f6;
       line-height: 1;
       opacity: 0.9;
@@ -638,32 +713,39 @@ def assistant_page() -> str:
       padding-right: 2px;
       scrollbar-width: thin;
       scrollbar-color: #cbd5e1 transparent;
+      opacity: 1;
+      transform: translateY(0);
+      transition: max-height 0.24s ease, opacity 0.2s ease, transform 0.2s ease, margin 0.2s ease;
     }
     .chips.hidden {
-      display: none;
+      max-height: 0;
+      opacity: 0;
+      transform: translateY(-4px);
+      overflow: hidden;
+      pointer-events: none;
     }
     .chip {
-      border: 1px solid #e8edf4;
-      border-radius: 11px;
-      background: #fafbfc;
-      color: #334155;
+      border: 1px solid rgba(226, 232, 240, 0.85);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.72);
+      color: #475569;
       cursor: pointer;
-      padding: 8px 12px 8px 9px;
-      font-size: 13px;
+      padding: 7px 10px 7px 8px;
+      font-size: 12.5px;
       text-align: left;
       display: flex;
       align-items: center;
-      gap: 10px;
-      font-weight: 500;
+      gap: 9px;
+      font-weight: 400;
       line-height: 1.45;
       letter-spacing: 0.01em;
       transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      box-shadow: none;
     }
     .chip:hover {
-      border-color: #93c5fd;
-      background: #ffffff;
-      box-shadow: 0 2px 12px rgba(59, 130, 246, 0.1);
+      border-color: rgba(186, 199, 216, 0.95);
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: 0 1px 6px rgba(15, 23, 42, 0.05);
       transform: translateY(-0.5px);
     }
     .chip:active {
@@ -755,12 +837,12 @@ def assistant_page() -> str:
       transform-origin: center;
     }
     .ask-icon {
-      width: 24px;
-      height: 24px;
-      border-radius: 8px;
-      background: linear-gradient(145deg, #dbeafe 0%, #bfdbfe 100%);
-      border: 1px solid rgba(255, 255, 255, 0.7);
-      box-shadow: 0 1px 3px rgba(37, 99, 235, 0.12);
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      background: linear-gradient(145deg, rgba(219, 234, 254, 0.72) 0%, rgba(191, 219, 254, 0.62) 100%);
+      border: 1px solid rgba(147, 197, 253, 0.55);
+      box-shadow: none;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -772,10 +854,10 @@ def assistant_page() -> str:
       display: block;
     }
     .label-text {
-      font-size: 12px;
-      font-weight: 600;
-      color: #1e293b;
-      letter-spacing: 0.03em;
+      font-size: 11px;
+      font-weight: 500;
+      color: #64748b;
+      letter-spacing: 0.04em;
     }
     .label-tools {
       display: inline-flex;
@@ -783,24 +865,34 @@ def assistant_page() -> str:
       gap: 6px;
       flex-shrink: 0;
     }
+    .suggestions.collapsed .label-tools {
+      gap: 0;
+    }
     .tool-btn {
-      border: 1px solid #e2e8f0;
-      background: #ffffff;
+      border: 1px solid transparent;
+      background: rgba(248, 250, 252, 0.65);
       color: #64748b;
       border-radius: 8px;
-      padding: 4px 10px;
+      padding: 3px 9px;
       font-size: 11px;
-      font-weight: 600;
+      font-weight: 500;
       cursor: pointer;
       line-height: 1.35;
-      transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+      box-shadow: none;
     }
     .tool-btn:hover {
-      border-color: #93c5fd;
-      color: #1d4ed8;
-      background: #f8fafc;
-      box-shadow: 0 1px 4px rgba(59, 130, 246, 0.12);
+      border-color: rgba(226, 232, 240, 0.95);
+      color: #334155;
+      background: rgba(255, 255, 255, 0.85);
+    }
+    .suggestions.collapsed #refreshSuggestBtn {
+      display: none;
+    }
+    .suggestions.collapsed #toggleSuggestBtn {
+      margin-left: auto;
+      padding-left: 11px;
+      padding-right: 11px;
     }
     .header-actions {
       display: inline-flex;
@@ -967,7 +1059,7 @@ def assistant_page() -> str:
       <div id="chatBox" class="chat">
         <div class="msg">
           <div class="avatar assistant-avatar"><img class="avatar-img" src="/assistant/avatar" alt="助手头像" /></div>
-          <div class="bubble assistant">您好，我是课堂巡课与学情预警场景的 AI 助教。请直接描述您的问题，我会尽量用简洁中文说明；涉及具体课堂数据时请对接业务系统查询。</div>
+          <div class="bubble assistant">您好，我是课堂巡课与学情预警 AI 助教。您可以直接提问，我会尽量用清晰、简洁的中文为您解答。</div>
         </div>
       </div>
       <div class="suggestions">
@@ -980,7 +1072,7 @@ def assistant_page() -> str:
               </span>
             </span>
             <span class="label-tools">
-              <button id="toggleSuggestBtn" class="tool-btn" type="button">收起</button>
+              <button id="toggleSuggestBtn" class="tool-btn" type="button">收起 ▴</button>
               <button id="refreshSuggestBtn" class="tool-btn" type="button">换一批</button>
             </span>
           </div>
@@ -1011,16 +1103,14 @@ def assistant_page() -> str:
     const sendBtn = document.getElementById("sendBtn");
     const suggestionChips = document.getElementById("suggestionChips");
     const suggestionPool = [
-      "今日已巡查课堂的预警占比是多少",
-      "今日课堂AI预警风险等级",
-      "实时课堂AI预警占比是多少",
       "课表时间段实时巡课简报",
       "非课表时间段今日巡课汇总",
-      "预警消息如何推送到企业微信",
-      "如何自定义预警阈值并触发消息",
-      "当前正在上课课堂有多少需要重点关注"
+      "实时课堂AI预警简报（预警课堂占比、风险等级、预警类型）",
+      "今日课堂AI预警汇总（已巡查课堂数、预警占比、风险等级）",
+      "预警推送的阈值是多少（到课率、前排满座率、抬头率）",
+      "当前正在上课课堂中需要重点关注的数量（实时巡课）"
     ];
-    const bulbIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M12 3a7 7 0 0 0-4.95 11.95c.68.67 1.1 1.25 1.33 2.05h7.24c.23-.8.65-1.38 1.33-2.05A7 7 0 0 0 12 3Z" stroke="#2563eb" stroke-width="1.85" stroke-linejoin="round"/><path d="M9.5 18h5M10 21h4" stroke="#2563eb" stroke-width="1.85" stroke-linecap="round"/></svg>';
+    const bulbIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M12 3a7 7 0 0 0-4.95 11.95c.68.67 1.1 1.25 1.33 2.05h7.24c.23-.8.65-1.38 1.33-2.05A7 7 0 0 0 12 3Z" stroke="#3b82f6" stroke-width="1.65" stroke-linejoin="round"/><path d="M9.5 18h5M10 21h4" stroke="#3b82f6" stroke-width="1.65" stroke-linecap="round"/></svg>';
 
     function shuffle(array) {
       const copy = [...array];
@@ -1057,7 +1147,7 @@ def assistant_page() -> str:
       const isHidden = suggestionChips.classList.contains("hidden");
       suggestionChips.classList.toggle("hidden", !isHidden);
       suggestionsBox.classList.toggle("collapsed", !isHidden);
-      toggleSuggestBtn.textContent = isHidden ? "收起" : "展开";
+      toggleSuggestBtn.textContent = isHidden ? "收起 ▴" : "展开 ▾";
     }
 
     function appendBubble(role, text) {
@@ -1119,14 +1209,43 @@ def assistant_page() -> str:
           assistantBubble.textContent = "服务请求失败，请检查接口状态。";
           return;
         }
-        const data = await response.json();
-        const ans = (data && data.answer) ? String(data.answer) : "";
-        if (ans.trim()) {
-          assistantBubble.textContent = ans;
-        } else {
-          assistantBubble.textContent = "暂无可用结论。";
+        if (!response.body) {
+          assistantBubble.textContent = "服务未返回流式内容，请稍后重试。";
+          return;
         }
-        chatBox.scrollTop = chatBox.scrollHeight;
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+        let fullAnswer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split(String.fromCharCode(10));
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            let eventData;
+            try {
+              eventData = JSON.parse(line);
+            } catch (e) {
+              continue;
+            }
+            if (eventData.type === "meta") {
+              assistantBubble.innerHTML = '<span class="loading-wrap">正在生成分析结论<div class="loading-bars"><span></span><span></span><span></span><span></span></div></span>';
+            } else if (eventData.type === "delta") {
+              fullAnswer += eventData.content || "";
+              assistantBubble.textContent = fullAnswer;
+              chatBox.scrollTop = chatBox.scrollHeight;
+            } else if (eventData.type === "done" && !fullAnswer) {
+              assistantBubble.textContent = "暂无可用结论。";
+            }
+          }
+        }
       } catch (error) {
         assistantBubble.textContent = "网络异常，回答中断。请重试。";
       } finally {
