@@ -5,8 +5,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from app.config import settings
-from app.db import get_business_connection, get_control_connection
+from app.db import get_connection
 from app.registry import QueryTemplate, TemplateRegistry
 from app.schemas import ExecuteRequest, ExecuteResponse, ExecuteMeta
 
@@ -107,8 +106,6 @@ class QueryService:
         )
 
     def _safe_write_audit_log(self, **kwargs: Any) -> None:
-        if settings.db_readonly:
-            return
         try:
             self._write_audit_log(**kwargs)
         except Exception:
@@ -185,25 +182,11 @@ class QueryService:
 
     @staticmethod
     def _run_query(template_sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
-        if settings.db_readonly and not QueryService._is_read_only_sql(template_sql):
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "success": False,
-                    "error_code": "READONLY_SQL_BLOCKED",
-                    "error_msg": "db readonly mode only allows SELECT/SHOW/DESCRIBE/EXPLAIN/WITH queries",
-                },
-            )
-        with get_business_connection() as conn:
+        with get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(template_sql, params)
                 rows = cursor.fetchall()
         return rows or []
-
-    @staticmethod
-    def _is_read_only_sql(sql: str) -> bool:
-        normalized = (sql or "").lstrip().lower()
-        return normalized.startswith(("select", "show", "describe", "desc", "explain", "with"))
 
     def _write_audit_log(
         self,
@@ -262,7 +245,7 @@ class QueryService:
             "created_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-        with get_control_connection() as conn:
+        with get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(audit_sql, payload)
 

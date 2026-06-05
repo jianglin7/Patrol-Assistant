@@ -146,16 +146,3 @@ Content-Type: application/json
 | `T10` | 实时整体风险等级 | 当前整体风险等级是什么？ |
 | `T11` | 实时预警类型分布 | 当前主要是什么预警？ |
 | `T13` | 今日预警占比与风险 | 今日风险整体怎么样？ |
-
-## 7. 助手既定问题口径说明
-
-### 非课表时间段智能AI巡课（今日已上课汇总）
-
-对应助手分桶：`daily_patrol`（`get_daily_patrol_brief`）。
-
-当前口径与代码保持一致，按以下条件过滤数据：
-
-- 课程时间：`DATE(course_start_time)=today` 且 `course_end_time < now`
-- 课堂有效性：关联 `t_tias_classroom`，要求 `has_course = 1`
-- 时间重叠：`cls.begin_time <= t_tias_course.course_end_time` 且 `cls.end_time >= t_tias_course.course_start_time`
-- 其他过滤：`tenant_id` 一致，`delete_flag=0`

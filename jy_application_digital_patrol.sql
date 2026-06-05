@@ -505,7 +505,7 @@ CREATE TABLE `t_ops_check_device_result` (
   `tenant_id` varchar(50) NOT NULL COMMENT '租户编号',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_check_plan_id` (`check_plan_id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='Ai巡课-运维-巡检计划-设备在线结果表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-运维-巡检计划-设备在线结果表';
 
 -- ----------------------------
 -- Table structure for t_ops_check_device_result_detail
@@ -535,7 +535,7 @@ CREATE TABLE `t_ops_check_device_result_detail` (
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_check_device_result_id` (`check_device_result_id`) USING BTREE,
   KEY `idx_last_modified_date_time` (`last_modified_date_time`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='Ai巡课-运维-巡检计划-设备在线结果明细表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-运维-巡检计划-设备在线结果明细表';
 
 -- ----------------------------
 -- Table structure for t_ops_check_device_result_detail_quality
@@ -556,7 +556,7 @@ CREATE TABLE `t_ops_check_device_result_detail_quality` (
   `tenant_id` varchar(50) NOT NULL COMMENT '租户编号',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_device_result_detail_id` (`device_result_detail_id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='Ai巡课-运维-巡检计划-设备在线-画质检测异常表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-运维-巡检计划-设备在线-画质检测异常表';
 
 -- ----------------------------
 -- Table structure for t_ops_check_plan
@@ -582,7 +582,7 @@ CREATE TABLE `t_ops_check_plan` (
   `delete_flag` tinyint(4) NOT NULL DEFAULT '0' COMMENT '删除标志（0：正常，1：删除）',
   `tenant_id` varchar(50) NOT NULL COMMENT '租户编号',
   PRIMARY KEY (`id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='Ai巡课-运维-巡检计划表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-运维-巡检计划表';
 
 -- ----------------------------
 -- Table structure for t_ops_check_plan_classroom
@@ -608,7 +608,7 @@ CREATE TABLE `t_ops_check_plan_classroom` (
   `tenant_id` varchar(50) NOT NULL COMMENT '租户编号',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_check_plan_id` (`check_plan_id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='Ai巡课-运维-巡检计划教室表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-运维-巡检计划教室表';
 
 -- ----------------------------
 -- Table structure for t_ops_check_plan_quality_config
@@ -630,7 +630,7 @@ CREATE TABLE `t_ops_check_plan_quality_config` (
   `tenant_id` varchar(50) NOT NULL COMMENT '租户编号',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_check_plan_id` (`check_plan_id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='Ai巡课-运维-巡检计划质量配置表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-运维-巡检计划质量配置表';
 
 -- ----------------------------
 -- Table structure for t_ops_video_history_missing_time
@@ -741,7 +741,7 @@ CREATE TABLE `t_patrol_alarm_event` (
   `face_enable` smallint(6) DEFAULT '0' COMMENT '是否开启人脸识别',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_tenant_org_code` (`tenant_id`) USING BTREE
-) ENGINE=InnoDB AUTO_INCREMENT=2019016211064504323 DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='巡课告警事件表';
+) ENGINE=InnoDB AUTO_INCREMENT=2019016211064504323 DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课告警事件表';
 
 -- ----------------------------
 -- Table structure for t_patrol_alarm_strategy
@@ -763,7 +763,7 @@ CREATE TABLE `t_patrol_alarm_strategy` (
   `alarm_desc` text COMMENT '说明',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_tenant_org_code` (`tenant_id`) USING BTREE
-) ENGINE=InnoDB AUTO_INCREMENT=2032029347893096451 DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='巡课告警策略表';
+) ENGINE=InnoDB AUTO_INCREMENT=2032029347893096451 DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课告警策略表';
 
 -- ----------------------------
 -- Table structure for t_patrol_alarm_strategy_event_relation
@@ -786,7 +786,7 @@ CREATE TABLE `t_patrol_alarm_strategy_event_relation` (
   KEY `idx_alarm_strategy_id` (`alarm_strategy_id`) USING BTREE,
   KEY `idx_alarm_event_id` (`alarm_event_id`) USING BTREE,
   KEY `idx_tenant_org_code` (`tenant_id`) USING BTREE
-) ENGINE=InnoDB AUTO_INCREMENT=2032029348002148355 DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='巡课告警策略事件关联表';
+) ENGINE=InnoDB AUTO_INCREMENT=2032029348002148355 DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课告警策略事件关联表';
 
 -- ----------------------------
 -- Table structure for t_patrol_attendance_confirm_record
@@ -811,7 +811,7 @@ CREATE TABLE `t_patrol_attendance_confirm_record` (
   `tenant_id` varchar(50) NOT NULL COMMENT '租户编号',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_course_id` (`course_id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='巡课-出勤确认记录';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-出勤确认记录';
 
 -- ----------------------------
 -- Table structure for t_patrol_classroom_status
@@ -841,7 +841,7 @@ CREATE TABLE `t_patrol_classroom_status` (
   KEY `idx_classroom_id` (`classroom_id`) USING BTREE,
   KEY `idx_last_modified_date_time` (`last_modified_date_time`) USING BTREE,
   KEY `idx_has_people` (`has_people`) USING BTREE
-) ENGINE=InnoDB AUTO_INCREMENT=2016647483374698498 DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='巡课教室状态表';
+) ENGINE=InnoDB AUTO_INCREMENT=2016647483374698498 DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课教室状态表';
 
 -- ----------------------------
 -- Table structure for t_patrol_classroom_user_attention
@@ -862,7 +862,7 @@ CREATE TABLE `t_patrol_classroom_user_attention` (
   `tenant_id` varchar(50) NOT NULL COMMENT '租户编号',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_user_id` (`user_id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='巡课-用户关注教室表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-用户关注教室表';
 
 -- ----------------------------
 -- Table structure for t_patrol_indicator_type
@@ -978,7 +978,7 @@ CREATE TABLE `t_patrol_pre_plan` (
   `tenant_id` varchar(50) NOT NULL COMMENT '租户编号',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_create_user_id` (`create_user_id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='Ai巡课-预案表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-预案表';
 
 -- ----------------------------
 -- Table structure for t_patrol_pre_plan_range
@@ -999,7 +999,7 @@ CREATE TABLE `t_patrol_pre_plan_range` (
   `tenant_id` varchar(50) NOT NULL COMMENT '租户编号',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_pre_plan_id` (`pre_plan_id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='Ai巡课-预案范围表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-预案范围表';
 
 -- ----------------------------
 -- Table structure for t_patrol_sensitive_words
@@ -1148,7 +1148,7 @@ CREATE TABLE `t_patrol_user_ignore_record` (
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_create_user_id` (`create_user_id`) USING BTREE,
   KEY `idx_record_id` (`record_id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='巡课-用户忽略预警弹框记录';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-用户忽略预警弹框记录';
 
 -- ----------------------------
 -- Table structure for t_patrol_user_setting
@@ -1169,7 +1169,7 @@ CREATE TABLE `t_patrol_user_setting` (
   `tenant_id` varchar(50) NOT NULL COMMENT '租户编号',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_user_id` (`user_id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='巡课-用户巡课设置表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-用户AI巡课设置表';
 
 -- ----------------------------
 -- Table structure for t_patrol_user_tip_config
@@ -1191,7 +1191,7 @@ CREATE TABLE `t_patrol_user_tip_config` (
   `tenant_id` varchar(50) NOT NULL COMMENT '租户编号',
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_user_id` (`user_id`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='巡课-用户提示-配置表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='AI巡课-用户提示-配置表';
 
 -- ----------------------------
 -- Table structure for t_patrol_warning_level

@@ -38,10 +38,6 @@ pip install -r query_service/requirements.txt
 cp query_service/.env.example query_service/.env
 ```
 
-> 三库模式：业务查询走 `MYSQL_*`；控制表（`ai_query_template_registry`、`ai_query_audit_log`）可单独配置 `CONTROL_MYSQL_*`；课表库可单独配置 `SCHEDULE_MYSQL_*`（用于轮次/总节次口径）。若未配置则默认复用 `MYSQL_*`。
-> 若课表库租户字段（`tenant_org_code`）与AI巡课库 `tenant_id` 不一致，可配置 `SCHEDULE_TENANT_ORG_CODE`。
-> 若希望业务库强只读，可设置 `DB_READONLY=true`（仅允许只读 SQL，且不写审计日志）。
-
 4. 启动服务：
 
 ```bash
@@ -80,7 +76,7 @@ uvicorn app.main:app --reload --port 8000
 ```html
 <iframe
   src="http://127.0.0.1:8001/embed"
-  title="AI巡课小助手"
+  title="舟小智AI小助手"
   width="420"
   height="720"
   style="border:0;border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,0.12);"
@@ -98,86 +94,3 @@ uvicorn app.main:app --reload --port 8000
 - `查询高三异常课程`
 - `统计整体学情数据`
 - `统计高二学情概览`
-
-## ARM 离线部署（Docker 镜像 tar）
-
-适用于现场服务器不联网，但现场有 Docker 环境的场景。
-
-### 1) 在可联网机器构建 ARM64 镜像并导出
-
-```bash
-cd query_service
-bash scripts/build_offline_arm64.sh
-```
-
-默认会生成：`patrol-assistant-v1-arm64.tar`。
-
-如果需要自定义镜像名/版本：
-
-```bash
-cd query_service
-IMAGE_NAME=patrol-assistant IMAGE_TAG=20260423 bash scripts/build_offline_arm64.sh
-```
-
-### 2) 将 tar 包拷贝到现场服务器
-
-可通过 U 盘或内网文件传输。
-
-### 3) 现场服务器导入并启动
-
-```bash
-docker load -i patrol-assistant-v1-arm64.tar
-docker run -d --name patrol-assistant \
-  --restart unless-stopped \
-  -p 8000:8000 \
-  --env-file .env \
-  patrol-assistant:v1
-```
-
-`--env-file .env` 里的配置请按现场 MySQL、LLM 地址调整。
-
-如需使用本地头像文件，可将宿主机目录挂载到容器并在 `.env` 配置：
-
-```bash
-docker run -d --name patrol-assistant \
-  --restart unless-stopped \
-  -p 8000:8000 \
-  --env-file .env \
-  -v /root/jianglp/assistant/assets:/app/assets:ro \
-  patrol-assistant:v1
-```
-
-`.env` 示例：
-
-```env
-ASSISTANT_AVATAR_PATH=/app/assets/robot.png
-USER_AVATAR_PATH=/app/assets/user.png
-```
-
-### 4) 初始化 SQL（首次部署）
-
-```bash
-mysql -u root -p jy_application_digital_patrol < sql/ai_query_control_tables.sql
-mysql -u root -p jy_application_digital_patrol < sql/seed_query_templates.sql
-```
-
-### 常见问题
-
-- 构建机拉取基础镜像失败（例如 TLS handshake timeout）：请改用可访问 Docker Hub 的网络环境，或由网络管理员提供已下载的 `python:3.10-slim` 基础镜像 tar 后先执行 `docker load` 再构建。
-- 现场不通公网不影响运行；只需保证应用到 MySQL 与 LLM 地址的内网连通。
-
-如果你拿到的是自定义基础镜像标签，也可在构建时指定：
-
-```bash
-cd query_service
-BASE_IMAGE=python:3.10-slim IMAGE_NAME=patrol-assistant IMAGE_TAG=v1 bash scripts/build_offline_arm64.sh
-```
-
-例如网络管理员给到 `python_3.10_slim_arm64.tar`：
-
-```bash
-docker load -i python_3.10_slim_arm64.tar
-docker images | rg "python\\s+3\\.10-slim"
-cd query_service
-BASE_IMAGE=python:3.10-slim bash scripts/build_offline_arm64.sh
-```

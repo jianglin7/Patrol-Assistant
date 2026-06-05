@@ -43,35 +43,32 @@ if _cors_origins:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-ASSISTANT_AVATAR_PATH = os.getenv(
-    "ASSISTANT_AVATAR_PATH",
-    str(Path(__file__).resolve().parent.parent / "assets" / "assistant-avatar.png"),
+ASSISTANT_AVATAR_PATH = (
+    "/Users/sz-seacraft/.cursor/projects/Users-sz-seacraft-Documents/assets/"
+    "robot-fcc73b3d-ebb6-4426-a39d-40f7705e860b.png"
 )
-USER_AVATAR_PATH = os.getenv("USER_AVATAR_PATH", "")
+USER_AVATAR_PATH = (
+    "/Users/sz-seacraft/.cursor/projects/Users-sz-seacraft-Documents/assets/"
+    "image-10ac4d0d-8894-4d10-9b8e-4745a24ba08b.png"
+)
+COMPANY_LOGO_PATH = os.getenv(
+    "COMPANY_LOGO_PATH",
+    str(Path(__file__).resolve().parent.parent / "assets" / "logo-encn-vertical-blue.png"),
+)
 
-_ASSISTANT_AVATAR_FALLBACK_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
-<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#1e40af"/></linearGradient></defs>
-<circle cx="48" cy="48" r="46" fill="url(#g)"/>
-<rect x="24" y="26" width="48" height="38" rx="10" fill="#ffffff" opacity="0.96"/>
-<circle cx="39" cy="45" r="4.2" fill="#1e3a8a"/><circle cx="57" cy="45" r="4.2" fill="#1e3a8a"/>
-<rect x="35" y="55" width="26" height="4.2" rx="2.1" fill="#3b82f6"/>
-<rect x="42" y="17" width="12" height="8" rx="2" fill="#bfdbfe"/>
+_COMPANY_LOGO_FALLBACK_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="520" height="269" viewBox="0 0 520 269">
+<rect width="520" height="269" fill="none"/>
+<text x="0" y="105" fill="#087ff0" font-family="Arial, sans-serif" font-size="104" font-weight="700">Seacraft</text>
+<text x="0" y="238" fill="#087ff0" font-family="Arial, sans-serif" font-size="88" font-weight="700">海舟智能</text>
 </svg>"""
 
-_USER_AVATAR_FALLBACK_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
-<defs><linearGradient id="u" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0ea5e9"/><stop offset="100%" stop-color="#6366f1"/></linearGradient></defs>
-<circle cx="48" cy="48" r="46" fill="url(#u)"/>
-<circle cx="48" cy="38" r="14" fill="#ffffff" opacity="0.95"/>
-<path d="M24 76c2-14 12-22 24-22s22 8 24 22" fill="#ffffff" opacity="0.95"/>
-</svg>"""
 
-def _serve_avatar(path: str, fallback_svg: str) -> Response:
-    if path:
-        p = Path(path)
-        if p.exists() and p.is_file():
-            media_type = "image/svg+xml" if p.suffix.lower() == ".svg" else "image/png"
-            return FileResponse(str(p), media_type=media_type)
-    return Response(content=fallback_svg, media_type="image/svg+xml")
+def _serve_company_logo() -> Response:
+    p = Path(COMPANY_LOGO_PATH)
+    if p.exists() and p.is_file():
+        media_type = "image/svg+xml" if p.suffix.lower() == ".svg" else "image/png"
+        return FileResponse(str(p), media_type=media_type)
+    return Response(content=_COMPANY_LOGO_FALLBACK_SVG, media_type="image/svg+xml")
 
 
 @app.get("/health")
@@ -415,18 +412,18 @@ def debug_assistant_traces_page() -> str:
 
 
 @app.get("/assistant/avatar")
-def assistant_avatar() -> Response:
-    return _serve_avatar(ASSISTANT_AVATAR_PATH, _ASSISTANT_AVATAR_FALLBACK_SVG)
+def assistant_avatar() -> FileResponse:
+    return FileResponse(ASSISTANT_AVATAR_PATH, media_type="image/png")
 
 
 @app.get("/assistant/user-avatar")
-def assistant_user_avatar() -> Response:
-    return _serve_avatar(USER_AVATAR_PATH, _USER_AVATAR_FALLBACK_SVG)
+def assistant_user_avatar() -> FileResponse:
+    return FileResponse(USER_AVATAR_PATH, media_type="image/png")
 
 
 @app.get("/assistant/company-logo")
 def assistant_company_logo() -> Response:
-    return assistant_avatar()
+    return _serve_company_logo()
 
 
 @app.get("/embed")
@@ -449,7 +446,7 @@ def assistant_page() -> str:
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI巡课小助手</title>
+  <title>舟小智AI小助手</title>
   <style>
     :root {
       --primary: #2d68ff;
@@ -561,6 +558,21 @@ def assistant_page() -> str:
       align-items: center;
       gap: 10px;
       min-width: 0;
+    }
+    .brand-logo {
+      width: 104px;
+      height: 54px;
+      border-radius: 0;
+      overflow: visible;
+      background: transparent;
+      border: 0;
+      flex-shrink: 0;
+    }
+    .company-logo-img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
     }
     .header-title {
       min-width: 0;
@@ -1045,6 +1057,7 @@ def assistant_page() -> str:
       .launcher { right: 16px; bottom: 14px; }
       .bubble { max-width: 95%; }
       .meta { display: none; }
+      .brand-logo { width: 86px; height: 45px; }
       .title { font-size: 16px; }
       .suggestions .label { flex-wrap: wrap; }
       .label-tools { width: 100%; justify-content: flex-end; margin-top: 4px; }
@@ -1071,8 +1084,11 @@ def assistant_page() -> str:
   <div id="assistantPanel" class="assistant-panel open">
     <div class="header">
       <div class="header-main">
+        <div class="brand-logo">
+          <img class="company-logo-img" src="/assistant/company-logo" alt="海舟智能" />
+        </div>
         <div class="header-title">
-          <h1 class="title">AI巡课小助手</h1>
+          <h1 class="title">舟小智AI小助手</h1>
           <div class="subtitle">高校课堂数据智能分析助手</div>
         </div>
       </div>
@@ -1112,7 +1128,7 @@ def assistant_page() -> str:
       <button id="sendBtn" onclick="ask()">发送</button>
     </div>
   </div>
-  <button id="launcher" class="launcher" title="打开AI巡课小助手">💬<span class="online-dot"></span></button>
+  <button id="launcher" class="launcher" title="打开舟小智AI小助手">💬<span class="online-dot"></span></button>
   <script>
     const urlParams = new URLSearchParams(window.location.search);
     const EMBED = urlParams.get("embed") === "1";
@@ -1130,7 +1146,7 @@ def assistant_page() -> str:
     const suggestionChips = document.getElementById("suggestionChips");
     const suggestionPool = [
       "课表时间段实时AI巡课简报（当前节次、课堂数量、AI巡查轮次、到课率、前排满座率、抬头率、重点关注课堂数、活力高课堂数）",
-      "非课表时间段今日AI巡课汇总（今日已结束课程节次的到课率、前排满座率、抬头率、课堂活动数据、重点关注课堂数、活力高课堂数）",
+      "非课表时间段今日AI巡课汇总（今日已结束课堂的到课率、前排满座率、抬头率、课堂活动数据、重点关注课堂数、活力高课堂数）",
       "实时课堂AI预警简报（AI巡查进度、上课节次、上课课堂数、预警课堂数、预警占比、风险等级、预警类型）",
       "今日课堂AI预警汇总（今日已结束课堂数、预警课堂数、预警占比、风险等级、预警类型）",
       "今日预警处置闭环（待处理、挂起、已闭环占比）",
@@ -1299,7 +1315,7 @@ def assistant_page() -> str:
     toggleSuggestBtn.addEventListener("click", toggleSuggestions);
     if (EMBED) {
       document.body.classList.add("embed-mode");
-      document.title = "AI巡课小助手";
+      document.title = "舟小智AI小助手";
     }
     refreshSuggestions();
     openAssistant();

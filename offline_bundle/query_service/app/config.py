@@ -15,31 +15,6 @@ class Settings(BaseSettings):
     mysql_password: str = ""
     mysql_database: str = "jy_application_digital_patrol"
     mysql_charset: str = "utf8mb4"
-    # 课表库（如 jy_course_he）连接；不填则复用业务库配置，建议使用只读账号
-    schedule_mysql_host: str | None = None
-    schedule_mysql_port: int | None = None
-    schedule_mysql_user: str | None = None
-    schedule_mysql_password: str | None = None
-    schedule_mysql_database: str | None = None
-    schedule_mysql_charset: str | None = None
-    # 课表库租户编码映射：可配置固定 tenant_org_code，留空则默认使用 tenant_id
-    schedule_tenant_org_code: str | None = None
-    # 控制库（模板注册/审计日志）连接；留空时默认复用业务库配置
-    control_mysql_host: str | None = None
-    control_mysql_port: int | None = None
-    control_mysql_user: str | None = None
-    control_mysql_password: str | None = None
-    control_mysql_database: str | None = None
-    control_mysql_charset: str | None = None
-    # true 时启用数据库只读保护：仅允许执行只读 SQL，并且不写审计日志
-    db_readonly: bool = False
-    # AI巡课阈值（可按租户运营规则调整）
-    patrol_focus_attendance_lt: float = 90
-    patrol_focus_front_full_lt: float = 65
-    patrol_focus_rise_lt: float = 65
-    patrol_vitality_attendance_gte: float = 95
-    patrol_vitality_front_full_gte: float = 80
-    patrol_vitality_rise_gte: float = 75
     llm_base_url: str = "http://10.80.5.197:8855/v1"
     llm_model: str = "qwen3-8b"
     llm_api_key: str = "EMPTY"

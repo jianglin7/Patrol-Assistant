@@ -9,3 +9,11 @@ __pycache__/
 .Python
 .venv/
 venv/
+
+*.tar
+*.zip
+
+jy_digital_patrol.sql
+query_service/jy_digital_patrol.sql
+jy_course_he_sync.sql
+bak.zip

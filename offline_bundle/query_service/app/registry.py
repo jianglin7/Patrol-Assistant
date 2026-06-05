@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from app.db import get_control_connection
+from app.db import get_connection
 
 
 @dataclass
@@ -30,7 +30,7 @@ class TemplateRegistry:
         ORDER BY CASE WHEN tenant_id = %s THEN 0 ELSE 1 END
         LIMIT 1
         """
-        with get_control_connection() as conn:
+        with get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(sql, (template_id, tenant_id, tenant_id))
                 row = cursor.fetchone()
