@@ -5,9 +5,31 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from app.db import get_connection
+from app.assistant_trace import redact_sensitive_text
+from app.config import settings
+from app.db import get_business_connection, get_control_connection
 from app.registry import QueryTemplate, TemplateRegistry
 from app.schemas import ExecuteRequest, ExecuteResponse, ExecuteMeta
+
+
+_QUERY_EXECUTION_FAILED_MSG = "查询执行失败，请检查查询条件或稍后重试。"
+_TEMPLATE_NOT_FOUND_MSG = "查询模板未启用或不存在。"
+_TEMPLATE_LOAD_FAILED_MSG = "查询模板加载失败，请稍后重试。"
+
+
+def _safe_error_message(value: Any, *, max_len: int = 200) -> str:
+    return redact_sensitive_text(value, max_len=max_len)
+
+
+def _audit_param_summary(params: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(params, dict):
+        return {"param_count": 0, "param_keys": [], "redacted": True}
+    keys = sorted(str(k) for k in params.keys())
+    return {
+        "param_count": len(keys),
+        "param_keys": keys[:80],
+        "redacted": True,
+    }
 
 
 class QueryService:
@@ -18,7 +40,29 @@ class QueryService:
         request_id = request.request_id or uuid4().hex
         started_at = datetime.now()
 
-        template = self.registry.get_template(request.template_id, request.tenant_id)
+        try:
+            template = self.registry.get_template(request.template_id, request.tenant_id)
+        except Exception as exc:  # pragma: no cover - runtime guard
+            self._safe_write_audit_log(
+                request_id=request_id,
+                request=request,
+                normalized_params={"tenant_id": request.tenant_id},
+                success=False,
+                result_count=0,
+                started_at=started_at,
+                error_code="TEMPLATE_LOAD_FAILED",
+                error_msg=f"{type(exc).__name__}: {_safe_error_message(exc)}",
+            )
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "request_id": request_id,
+                    "success": False,
+                    "error_code": "TEMPLATE_LOAD_FAILED",
+                    "error_msg": _TEMPLATE_LOAD_FAILED_MSG,
+                    "error_type": type(exc).__name__,
+                },
+            ) from exc
         if not template:
             self._safe_write_audit_log(
                 request_id=request_id,
@@ -28,7 +72,7 @@ class QueryService:
                 result_count=0,
                 started_at=started_at,
                 error_code="TEMPLATE_NOT_FOUND",
-                error_msg=f"template `{request.template_id}` is not enabled for tenant `{request.tenant_id}`",
+                error_msg=_TEMPLATE_NOT_FOUND_MSG,
             )
             raise HTTPException(
                 status_code=404,
@@ -36,7 +80,7 @@ class QueryService:
                     "request_id": request_id,
                     "success": False,
                     "error_code": "TEMPLATE_NOT_FOUND",
-                    "error_msg": f"template `{request.template_id}` is not enabled for tenant `{request.tenant_id}`",
+                    "error_msg": _TEMPLATE_NOT_FOUND_MSG,
                 },
             )
 
@@ -56,7 +100,7 @@ class QueryService:
                 result_count=0,
                 started_at=started_at,
                 error_code=exc.detail["error_code"],
-                error_msg=exc.detail["error_msg"],
+                error_msg=_safe_error_message(exc.detail["error_msg"]),
             )
             raise
         except Exception as exc:  # pragma: no cover - runtime guard
@@ -68,7 +112,7 @@ class QueryService:
                 result_count=0,
                 started_at=started_at,
                 error_code="QUERY_EXECUTION_FAILED",
-                error_msg=str(exc),
+                error_msg=f"{type(exc).__name__}: {_safe_error_message(exc)}",
             )
             raise HTTPException(
                 status_code=500,
@@ -76,7 +120,8 @@ class QueryService:
                     "request_id": request_id,
                     "success": False,
                     "error_code": "QUERY_EXECUTION_FAILED",
-                    "error_msg": str(exc),
+                    "error_msg": _QUERY_EXECUTION_FAILED_MSG,
+                    "error_type": type(exc).__name__,
                 },
             ) from exc
 
@@ -106,6 +151,8 @@ class QueryService:
         )
 
     def _safe_write_audit_log(self, **kwargs: Any) -> None:
+        if settings.db_readonly:
+            return
         try:
             self._write_audit_log(**kwargs)
         except Exception:
@@ -182,11 +229,25 @@ class QueryService:
 
     @staticmethod
     def _run_query(template_sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
-        with get_connection() as conn:
+        if settings.db_readonly and not QueryService._is_read_only_sql(template_sql):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "error_code": "READONLY_SQL_BLOCKED",
+                    "error_msg": "db readonly mode only allows SELECT/SHOW/DESCRIBE/EXPLAIN/WITH queries",
+                },
+            )
+        with get_business_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(template_sql, params)
                 rows = cursor.fetchall()
         return rows or []
+
+    @staticmethod
+    def _is_read_only_sql(sql: str) -> bool:
+        normalized = (sql or "").lstrip().lower()
+        return normalized.startswith(("select", "show", "describe", "desc", "explain", "with"))
 
     def _write_audit_log(
         self,
@@ -235,17 +296,17 @@ class QueryService:
             "user_id": request.user_id,
             "tenant_id": request.tenant_id,
             "template_id": request.template_id,
-            "request_params": json.dumps(request.params, ensure_ascii=False),
-            "normalized_params": json.dumps(normalized_params, ensure_ascii=False),
+            "request_params": json.dumps(_audit_param_summary(request.params), ensure_ascii=False),
+            "normalized_params": json.dumps(_audit_param_summary(normalized_params), ensure_ascii=False),
             "result_count": result_count,
             "success_flag": 1 if success else 0,
             "error_code": error_code,
-            "error_msg": error_msg,
+            "error_msg": _safe_error_message(error_msg) if error_msg else None,
             "duration_ms": duration_ms,
             "created_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-        with get_connection() as conn:
+        with get_control_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(audit_sql, payload)
 

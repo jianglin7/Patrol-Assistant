@@ -1,14 +1,17 @@
 import asyncio
 import json
+import os
 from collections.abc import AsyncGenerator
+from pathlib import Path
+from queue import Empty, Queue
 from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 
-from app.assistant_trace import assistant_trace_store, trace_emit
+from app.assistant_trace import assistant_trace_store, trace_emit, redact_sensitive_text
 from app.config import settings
 from app.demo import ask_demo_assistant
 from app.patrol_api import (
@@ -17,20 +20,24 @@ from app.patrol_api import (
     get_push_strategy_preview,
     get_realtime_patrol_brief,
     get_realtime_warning_brief,
+    preview_assistant_auto_plan,
     route_assistant_query,
     get_video_points,
 )
 from app.schemas import ExecuteRequest, ExecuteResponse
+from app.semantic_executor import execute_semantic_plan
 from app.service import QueryService
 
 
 app = FastAPI(title=settings.app_name)
 service = QueryService()
 
-STREAM_THINKING_DELAY_SEC = 0.45
-STREAM_CHAR_DELAY_SEC = 0.02
-STREAM_PRESET_THINKING_DELAY_SEC = 0.9
-STREAM_PRESET_CHAR_DELAY_SEC = 0.05
+STREAM_THINKING_DELAY_SEC = float(settings.assistant_stream_thinking_delay_sec)
+STREAM_CHAR_DELAY_SEC = float(settings.assistant_stream_char_delay_sec)
+STREAM_PRESET_THINKING_DELAY_SEC = float(settings.assistant_stream_preset_thinking_delay_sec)
+STREAM_PRESET_CHAR_DELAY_SEC = float(settings.assistant_stream_preset_char_delay_sec)
+STREAM_CHUNK_SIZE = max(1, int(settings.assistant_stream_chunk_size or 16))
+STREAM_PRESET_CHUNK_SIZE = max(1, int(settings.assistant_stream_preset_chunk_size or 18))
 
 _cors_origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
 if _cors_origins:
@@ -41,14 +48,75 @@ if _cors_origins:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-ASSISTANT_AVATAR_PATH = (
-    "/Users/sz-seacraft/.cursor/projects/Users-sz-seacraft-Documents/assets/"
-    "robot-fcc73b3d-ebb6-4426-a39d-40f7705e860b.png"
+ASSISTANT_AVATAR_PATH = os.getenv(
+    "ASSISTANT_AVATAR_PATH",
+    str(Path(__file__).resolve().parent.parent / "assets" / "assistant-avatar.png"),
 )
-USER_AVATAR_PATH = (
-    "/Users/sz-seacraft/.cursor/projects/Users-sz-seacraft-Documents/assets/"
-    "image-10ac4d0d-8894-4d10-9b8e-4745a24ba08b.png"
+USER_AVATAR_PATH = os.getenv("USER_AVATAR_PATH", "")
+COMPANY_LOGO_PATH = os.getenv(
+    "COMPANY_LOGO_PATH",
+    str(Path(__file__).resolve().parent.parent / "assets" / "logo-encn-vertical-blue.png"),
 )
+
+_ASSISTANT_AVATAR_FALLBACK_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#1e40af"/></linearGradient></defs>
+<circle cx="48" cy="48" r="46" fill="url(#g)"/>
+<rect x="24" y="26" width="48" height="38" rx="10" fill="#ffffff" opacity="0.96"/>
+<circle cx="39" cy="45" r="4.2" fill="#1e3a8a"/><circle cx="57" cy="45" r="4.2" fill="#1e3a8a"/>
+<rect x="35" y="55" width="26" height="4.2" rx="2.1" fill="#3b82f6"/>
+<rect x="42" y="17" width="12" height="8" rx="2" fill="#bfdbfe"/>
+</svg>"""
+
+_USER_AVATAR_FALLBACK_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+<defs><linearGradient id="u" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0ea5e9"/><stop offset="100%" stop-color="#6366f1"/></linearGradient></defs>
+<circle cx="48" cy="48" r="46" fill="url(#u)"/>
+<circle cx="48" cy="38" r="14" fill="#ffffff" opacity="0.95"/>
+<path d="M24 76c2-14 12-22 24-22s22 8 24 22" fill="#ffffff" opacity="0.95"/>
+</svg>"""
+
+_COMPANY_LOGO_FALLBACK_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="520" height="269" viewBox="0 0 520 269">
+<rect width="520" height="269" fill="none"/>
+<text x="0" y="105" fill="#087ff0" font-family="Arial, sans-serif" font-size="104" font-weight="700">Seacraft</text>
+<text x="0" y="238" fill="#087ff0" font-family="Arial, sans-serif" font-size="88" font-weight="700">海舟智能</text>
+</svg>"""
+
+
+def _stream_answer_chunks(answer: str, chunk_size: int) -> list[str]:
+    """Split text into readable chunks so long reports do not render character by character."""
+    chunks: list[str] = []
+    buf = ""
+    soft_breaks = set("，,；;。.!！？?\n")
+    for ch in answer or "":
+        buf += ch
+        if len(buf) >= chunk_size or (len(buf) >= 8 and ch in soft_breaks):
+            chunks.append(buf)
+            buf = ""
+    if buf:
+        chunks.append(buf)
+    return chunks
+
+
+def _ndjson_event(event: dict[str, Any]) -> str:
+    return json.dumps(event, ensure_ascii=False) + "\n"
+
+
+def _remaining_answer_after_stream(answer: str, streamed_answer: str) -> str:
+    if not answer:
+        return ""
+    if not streamed_answer:
+        return answer
+    if answer.startswith(streamed_answer):
+        return answer[len(streamed_answer):]
+    return ""
+
+
+def _serve_avatar(path: str, fallback_svg: str) -> Response:
+    if path:
+        p = Path(path)
+        if p.exists() and p.is_file():
+            media_type = "image/svg+xml" if p.suffix.lower() == ".svg" else "image/png"
+            return FileResponse(str(p), media_type=media_type)
+    return Response(content=fallback_svg, media_type="image/svg+xml")
 
 
 @app.get("/health")
@@ -126,67 +194,173 @@ async def playground_ask_stream(payload: dict[str, str]) -> StreamingResponse:
 
 
 @app.post("/api/assistant/ask")
-def assistant_ask(payload: dict[str, str]) -> dict[str, object]:
+def assistant_ask(payload: dict[str, Any]) -> dict[str, object]:
     question = payload.get("question", "")
     tenant_id = str(payload.get("tenant_id") or settings.assistant_default_tenant_id)
+    session_id = str(payload.get("session_id") or "").strip()
     trace_id: str | None = None
     if settings.assistant_trace_enabled:
         trace_id = assistant_trace_store.begin("/api/assistant/ask", question, tenant_id)
-        trace_emit(trace_id, "handler_enter", question_len=len(question or ""))
+        trace_emit(
+            trace_id,
+            "handler_enter",
+            question_len=len(question or ""),
+            session_id=session_id[:48] if session_id else None,
+        )
     err: str | None = None
     try:
-        return route_assistant_query(question, tenant_id, trace_id=trace_id)
+        return route_assistant_query(question, tenant_id, session_id=session_id, trace_id=trace_id)
     except Exception as ex:
-        err = str(ex)
-        trace_emit(trace_id, "handler_exception", error=repr(ex))
+        err = type(ex).__name__
+        trace_emit(
+            trace_id,
+            "handler_exception",
+            error_type=type(ex).__name__,
+            error=redact_sensitive_text(repr(ex), max_len=160),
+        )
         raise
     finally:
         if trace_id:
             assistant_trace_store.finalize(trace_id, "error" if err else "ok", err)
 
 
+@app.post("/api/assistant/plan")
+def assistant_plan(payload: dict[str, Any]) -> dict[str, Any]:
+    """仅返回自动规划结果（DSL + QueryPlan），用于调试随机问题映射。"""
+    question = str(payload.get("question") or "")
+    tenant_id = str(payload.get("tenant_id") or settings.assistant_default_tenant_id)
+    query_options = payload.get("query_options")
+    opts = query_options if isinstance(query_options, dict) else None
+    plan = preview_assistant_auto_plan(question, tenant_id, query_options=opts)
+    if bool(payload.get("execute")):
+        plan["execution"] = execute_semantic_plan(
+            plan,
+            tenant_id=tenant_id,
+            user_id=str(payload.get("user_id") or "") or None,
+            service=service,
+            continue_on_error=bool(settings.assistant_auto_plan_template_continue_on_error),
+        )
+    return plan
+
+
 @app.post("/api/assistant/ask-stream")
-async def assistant_ask_stream(payload: dict[str, str]) -> StreamingResponse:
-    """流式输出（meta -> delta* -> done）。既定问题与通用问题都按字吐出。"""
+async def assistant_ask_stream(payload: dict[str, Any]) -> StreamingResponse:
+    """流式输出（meta -> delta* -> done）。业务链路通过 callback 直接投递 delta。"""
     question = payload.get("question", "")
     tenant_id = str(payload.get("tenant_id") or settings.assistant_default_tenant_id)
+    session_id = str(payload.get("session_id") or "").strip()
     trace_id: str | None = None
     if settings.assistant_trace_enabled:
         trace_id = assistant_trace_store.begin("/api/assistant/ask-stream", question, tenant_id)
-        trace_emit(trace_id, "handler_enter", question_len=len(question or ""))
+        trace_emit(
+            trace_id,
+            "handler_enter",
+            question_len=len(question or ""),
+            session_id=session_id[:48] if session_id else None,
+        )
 
     async def event_stream() -> AsyncGenerator[str, None]:
         err: str | None = None
+        streamed_answer = ""
+        delta_count = 0
         try:
-            yield json.dumps({"type": "meta"}, ensure_ascii=False) + "\n"
+            yield _ndjson_event({"type": "meta"})
             trace_emit(trace_id, "ndjson_meta_sent")
             await asyncio.sleep(STREAM_THINKING_DELAY_SEC)
 
-            result = await asyncio.to_thread(route_assistant_query, question, tenant_id, trace_id)
+            delta_queue: Queue[str] = Queue()
+
+            def stream_callback(content: str) -> None:
+                if content:
+                    delta_queue.put(content)
+
+            result_task = asyncio.create_task(
+                asyncio.to_thread(
+                    route_assistant_query,
+                    question,
+                    tenant_id,
+                    session_id=session_id,
+                    trace_id=trace_id,
+                    stream_callback=stream_callback,
+                )
+            )
+
+            while True:
+                drained = False
+                while True:
+                    try:
+                        chunk = delta_queue.get_nowait()
+                    except Empty:
+                        break
+                    if chunk:
+                        streamed_answer += chunk
+                        delta_count += 1
+                        drained = True
+                        yield _ndjson_event({"type": "delta", "content": chunk})
+                if result_task.done():
+                    break
+                await asyncio.sleep(0.01 if drained else 0.03)
+
+            result = await result_task
+
+            while True:
+                try:
+                    chunk = delta_queue.get_nowait()
+                except Empty:
+                    break
+                if chunk:
+                    streamed_answer += chunk
+                    delta_count += 1
+                    yield _ndjson_event({"type": "delta", "content": chunk})
+
             answer = str(result.get("answer") or "").strip()
             intent = str(result.get("intent") or "")
             source = str(result.get("source") or "")
-            trace_emit(trace_id, "stream_result_ready", intent=intent, answer_chars=len(answer))
+            remaining_answer = _remaining_answer_after_stream(answer, streamed_answer)
+            trace_emit(
+                trace_id,
+                "stream_result_ready",
+                intent=intent,
+                answer_chars=len(answer),
+                streamed_chars=len(streamed_answer),
+                remaining_chars=len(remaining_answer),
+                delta_count=delta_count,
+            )
 
-            if answer:
-                # 命中既定问题（库表简报）时，额外放慢思考与吐字节奏，营造更自然的输出过程
-                char_delay = STREAM_CHAR_DELAY_SEC
-                if source == "patrol_api":
+            if remaining_answer:
+                chunk_delay = STREAM_CHAR_DELAY_SEC
+                chunk_size = STREAM_CHUNK_SIZE
+                if source == "patrol_api" and not streamed_answer:
                     await asyncio.sleep(STREAM_PRESET_THINKING_DELAY_SEC)
-                    char_delay = STREAM_PRESET_CHAR_DELAY_SEC
-                for ch in answer:
-                    yield json.dumps({"type": "delta", "content": ch}, ensure_ascii=False) + "\n"
-                    await asyncio.sleep(char_delay)
-            else:
-                yield json.dumps({"type": "delta", "content": "暂无可用结论。"}, ensure_ascii=False) + "\n"
+                    chunk_delay = STREAM_PRESET_CHAR_DELAY_SEC
+                    chunk_size = STREAM_PRESET_CHUNK_SIZE
+                chunks = _stream_answer_chunks(remaining_answer, chunk_size)
+                trace_emit(
+                    trace_id,
+                    "stream_remaining_chunks_prepared",
+                    chunk_count=len(chunks),
+                    chunk_size=chunk_size,
+                    chunk_delay_sec=chunk_delay,
+                )
+                for chunk in chunks:
+                    yield _ndjson_event({"type": "delta", "content": chunk})
+                    if chunk_delay > 0:
+                        await asyncio.sleep(chunk_delay)
+            elif not streamed_answer:
+                yield _ndjson_event({"type": "delta", "content": "暂无可用结论。"})
 
-            yield json.dumps({"type": "done"}, ensure_ascii=False) + "\n"
+            yield _ndjson_event({"type": "done"})
             trace_emit(trace_id, "ndjson_done_sent")
         except Exception as ex:
-            err = str(ex)
-            trace_emit(trace_id, "ndjson_generator_exception", error=repr(ex))
-            yield json.dumps({"type": "delta", "content": "网络异常，回答中断。请重试。"}, ensure_ascii=False) + "\n"
-            yield json.dumps({"type": "done"}, ensure_ascii=False) + "\n"
+            err = type(ex).__name__
+            trace_emit(
+                trace_id,
+                "ndjson_generator_exception",
+                error_type=type(ex).__name__,
+                error=redact_sensitive_text(repr(ex), max_len=160),
+            )
+            yield _ndjson_event({"type": "delta", "content": "网络异常，回答中断。请重试。"})
+            yield _ndjson_event({"type": "done"})
         finally:
             if trace_id:
                 assistant_trace_store.finalize(trace_id, "error" if err else "ok", err)
@@ -220,7 +394,10 @@ def debug_assistant_trace_detail(trace_id: str) -> dict[str, Any]:
 
 @app.get("/debug/assistant-traces", response_class=HTMLResponse)
 def debug_assistant_traces_page() -> str:
-    """简易 Web 页：查询助手追踪列表与单条时间线（需 ASSISTANT_TRACE_ENABLED=true）。"""
+    """简易 Web 页：查询助手追踪列表与单条时间线。
+
+    生产环境必须关闭 trace，或通过网关/鉴权限制访问。
+    """
     return """<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -392,13 +569,18 @@ def debug_assistant_traces_page() -> str:
 
 
 @app.get("/assistant/avatar")
-def assistant_avatar() -> FileResponse:
-    return FileResponse(ASSISTANT_AVATAR_PATH, media_type="image/png")
+def assistant_avatar() -> Response:
+    return _serve_avatar(ASSISTANT_AVATAR_PATH, _ASSISTANT_AVATAR_FALLBACK_SVG)
 
 
 @app.get("/assistant/user-avatar")
-def assistant_user_avatar() -> FileResponse:
-    return FileResponse(USER_AVATAR_PATH, media_type="image/png")
+def assistant_user_avatar() -> Response:
+    return _serve_avatar(USER_AVATAR_PATH, _USER_AVATAR_FALLBACK_SVG)
+
+
+@app.get("/assistant/company-logo")
+def assistant_company_logo() -> Response:
+    return _serve_avatar(COMPANY_LOGO_PATH, _COMPANY_LOGO_FALLBACK_SVG)
 
 
 @app.get("/embed")
@@ -421,7 +603,7 @@ def assistant_page() -> str:
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI小助手</title>
+  <title>舟小智AI小助手</title>
   <style>
     :root {
       --primary: #2d68ff;
@@ -531,17 +713,26 @@ def assistant_page() -> str:
     .header-main {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       min-width: 0;
     }
     .brand-logo {
-      width: 34px;
-      height: 34px;
-      border-radius: 10px;
-      overflow: hidden;
-      background: #ecf4ff;
-      border: 1px solid #cfe0ff;
+      width: 88px;
+      height: 44px;
+      border-radius: 0;
+      overflow: visible;
+      background: transparent;
+      border: 0;
       flex-shrink: 0;
+    }
+    .company-logo-img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    .header-title {
+      min-width: 0;
     }
     .title {
       font-size: 18px;
@@ -549,11 +740,17 @@ def assistant_page() -> str:
       font-weight: 700;
       margin: 0;
       color: #1e40af;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .subtitle {
       margin-top: 2px;
       color: var(--muted);
       font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .meta {
       display: flex;
@@ -1017,6 +1214,8 @@ def assistant_page() -> str:
       .launcher { right: 16px; bottom: 14px; }
       .bubble { max-width: 95%; }
       .meta { display: none; }
+      .brand-logo { width: 72px; height: 36px; }
+      .title { font-size: 16px; }
       .suggestions .label { flex-wrap: wrap; }
       .label-tools { width: 100%; justify-content: flex-end; margin-top: 4px; }
       .tool-btn { padding: 3px 8px; font-size: 11px; }
@@ -1028,10 +1227,10 @@ def assistant_page() -> str:
   <div class="background-board">
     <div>
       <h1 class="board-title">高校智慧校园管理平台</h1>
-      <div class="board-sub">当前节点：教务处数据看板（学情与课堂巡查）</div>
+      <div class="board-sub">当前节点：教务处数据看板（学情与课堂AI巡查）</div>
     </div>
     <div class="board-cards">
-      <div class="board-card"><div class="k">今日巡查课堂</div><div class="v">196</div></div>
+      <div class="board-card"><div class="k">今日AI巡查课堂</div><div class="v">196</div></div>
       <div class="board-card"><div class="k">实时预警课堂</div><div class="v">7</div></div>
       <div class="board-card"><div class="k">平均到课率</div><div class="v">93.2%</div></div>
       <div class="board-card"><div class="k">课堂活力高值</div><div class="v">32</div></div>
@@ -1043,11 +1242,11 @@ def assistant_page() -> str:
     <div class="header">
       <div class="header-main">
         <div class="brand-logo">
-          <img class="avatar-img" src="/assistant/avatar" alt="助手头像" />
+          <img class="company-logo-img" src="/assistant/company-logo" alt="海舟智能" />
         </div>
-        <div>
-          <h1 class="title">AI小助手</h1>
-          <div class="subtitle">高校学情异常与教学评价智能分析助手</div>
+        <div class="header-title">
+          <h1 class="title">舟小智AI小助手</h1>
+          <div class="subtitle">高校课堂数据智能分析助手</div>
         </div>
       </div>
       <div class="header-actions">
@@ -1059,7 +1258,7 @@ def assistant_page() -> str:
       <div id="chatBox" class="chat">
         <div class="msg">
           <div class="avatar assistant-avatar"><img class="avatar-img" src="/assistant/avatar" alt="助手头像" /></div>
-          <div class="bubble assistant">您好，我是课堂巡课与学情预警 AI 助教。您可以直接提问，我会尽量用清晰、简洁的中文为您解答。</div>
+          <div class="bubble assistant">您好，我是舟小智AI小助手。您可以直接提问，我会尽量用清晰、简洁的中文为您解答。</div>
         </div>
       </div>
       <div class="suggestions">
@@ -1086,12 +1285,24 @@ def assistant_page() -> str:
       <button id="sendBtn" onclick="ask()">发送</button>
     </div>
   </div>
-  <button id="launcher" class="launcher" title="打开AI小助手">💬<span class="online-dot"></span></button>
+  <button id="launcher" class="launcher" title="打开舟小智AI小助手">💬<span class="online-dot"></span></button>
   <script>
     const urlParams = new URLSearchParams(window.location.search);
     const EMBED = urlParams.get("embed") === "1";
     const urlTenant = (urlParams.get("tenant_id") || "").trim();
     const TENANT_ID = urlTenant.length ? urlTenant : null;
+    const SESSION_STORAGE_KEY = TENANT_ID ? ("assistant_session_id:" + TENANT_ID) : "assistant_session_id:default";
+    function createSessionId() {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return window.crypto.randomUUID();
+      }
+      return "sess-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
+    }
+    let SESSION_ID = sessionStorage.getItem(SESSION_STORAGE_KEY) || "";
+    if (!SESSION_ID) {
+      SESSION_ID = createSessionId();
+      sessionStorage.setItem(SESSION_STORAGE_KEY, SESSION_ID);
+    }
     const assistantPanel = document.getElementById("assistantPanel");
     const launcher = document.getElementById("launcher");
     const closeBtn = document.getElementById("closeBtn");
@@ -1103,12 +1314,16 @@ def assistant_page() -> str:
     const sendBtn = document.getElementById("sendBtn");
     const suggestionChips = document.getElementById("suggestionChips");
     const suggestionPool = [
-      "课表时间段实时巡课简报",
-      "非课表时间段今日巡课汇总",
-      "实时课堂AI预警简报（预警课堂占比、风险等级、预警类型）",
-      "今日课堂AI预警汇总（已巡查课堂数、预警占比、风险等级）",
-      "预警推送的阈值是多少（到课率、前排满座率、抬头率）",
-      "当前正在上课课堂中需要重点关注的数量（实时巡课）"
+      "课表时间段实时AI巡课简报（当前节次、课堂数量、AI巡查轮次、到课率、前排满座率、抬头率、重点关注课堂数、活力高课堂数）",
+      "非课表时间段今日AI巡课汇总（今日已结束课堂的到课率、前排满座率、抬头率、课堂活动数据、重点关注课堂数、活力高课堂数）",
+      "实时课堂AI预警简报（AI巡查进度、上课节次、上课课堂数、预警课堂数、预警占比、风险等级、预警类型）",
+      "今日课堂AI预警汇总（今日已结束课堂数、预警课堂数、预警占比、风险等级、预警类型）",
+      "今日预警处置闭环（待处理、挂起、已闭环占比）",
+      "近7天预警趋势和Top风险类型",
+      "当前告警策略阈值效果（规则触发频次）",
+      "近7天教师风险画像（预警最多教师）",
+      "近30天敏感词相关预警统计",
+      "最近一条预警对应的视频回看区间"
     ];
     const bulbIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M12 3a7 7 0 0 0-4.95 11.95c.68.67 1.1 1.25 1.33 2.05h7.24c.23-.8.65-1.38 1.33-2.05A7 7 0 0 0 12 3Z" stroke="#3b82f6" stroke-width="1.65" stroke-linejoin="round"/><path d="M9.5 18h5M10 21h4" stroke="#3b82f6" stroke-width="1.65" stroke-linecap="round"/></svg>';
 
@@ -1199,6 +1414,7 @@ def assistant_page() -> str:
       try {
         const reqBody = { question };
         if (TENANT_ID) reqBody.tenant_id = TENANT_ID;
+        if (SESSION_ID) reqBody.session_id = SESSION_ID;
         const response = await fetch("/api/assistant/ask-stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1264,12 +1480,15 @@ def assistant_page() -> str:
     });
     launcher.addEventListener("click", openAssistant);
     closeBtn.addEventListener("click", closeAssistant);
-    refreshPageBtn.addEventListener("click", () => window.location.reload());
+    refreshPageBtn.addEventListener("click", () => {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      window.location.reload();
+    });
     refreshSuggestBtn.addEventListener("click", refreshSuggestions);
     toggleSuggestBtn.addEventListener("click", toggleSuggestions);
     if (EMBED) {
       document.body.classList.add("embed-mode");
-      document.title = "AI小助手";
+      document.title = "舟小智AI小助手";
     }
     refreshSuggestions();
     openAssistant();

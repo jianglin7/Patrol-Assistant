@@ -1,0 +1,24 @@
+{
+  "version": "v1",
+  "items": [
+    {"code": "OK", "message": "成功", "retryable": false},
+    {"code": "E_INTENT_UNSUPPORTED", "message": "意图未支持", "retryable": false},
+    {"code": "E_PARSE_FAILED", "message": "问句解析失败", "retryable": false},
+    {"code": "E_METRIC_UNMAPPED", "message": "指标未识别", "retryable": false},
+    {"code": "E_DIMENSION_UNMAPPED", "message": "维度未识别", "retryable": false},
+    {"code": "E_FILTER_CONFLICT", "message": "筛选条件冲突", "retryable": false},
+    {"code": "E_TEMPLATE_NOT_FOUND", "message": "未找到可执行模板", "retryable": false},
+    {"code": "E_TEMPLATE_PARAM_MISSING", "message": "模板参数缺失", "retryable": false},
+    {"code": "E_SQL_READONLY_BLOCKED", "message": "只读模式阻止非查询语句", "retryable": false},
+    {"code": "E_DB_CONNECT_FAIL_BUSINESS", "message": "业务库连接失败", "retryable": true},
+    {"code": "E_DB_CONNECT_FAIL_SCHEDULE", "message": "课表库连接失败", "retryable": true},
+    {"code": "E_DB_QUERY_TIMEOUT", "message": "查询超时", "retryable": true},
+    {"code": "E_DB_QUERY_FAILED", "message": "查询执行失败", "retryable": true},
+    {"code": "E_DATA_EMPTY_VALID", "message": "查询成功但无数据", "retryable": false},
+    {"code": "E_DATA_DELAY", "message": "数据同步延迟", "retryable": true},
+    {"code": "E_LLM_INTENT_TIMEOUT", "message": "意图分类模型超时", "retryable": true},
+    {"code": "E_LLM_INTENT_INVALID_JSON", "message": "意图分类返回格式错误", "retryable": true},
+    {"code": "E_RENDER_FAILED", "message": "结果渲染失败", "retryable": true},
+    {"code": "E_INTERNAL", "message": "内部异常", "retryable": true}
+  ]
+}

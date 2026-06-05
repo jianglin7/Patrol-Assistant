@@ -1,0 +1,103 @@
+{
+  "version": "v1",
+  "items": [
+    {
+      "metric_id": "attendance_rate",
+      "name": "到课率",
+      "aliases": ["到课率", "出勤率", "实到率"],
+      "intent_weights": {
+        "realtime_patrol": 0.55,
+        "daily_patrol": 0.85,
+        "realtime_warning": 0.35,
+        "daily_warning": 0.45
+      }
+    },
+    {
+      "metric_id": "front_full_rate",
+      "name": "前排满座率",
+      "aliases": ["前排满座率", "前排就坐率", "前排率"],
+      "intent_weights": {
+        "realtime_patrol": 0.55,
+        "daily_patrol": 0.8,
+        "realtime_warning": 0.25,
+        "daily_warning": 0.35
+      }
+    },
+    {
+      "metric_id": "raise_head_rate",
+      "name": "抬头率",
+      "aliases": ["抬头率", "专注度", "听讲专注"],
+      "intent_weights": {
+        "realtime_patrol": 0.55,
+        "daily_patrol": 0.8,
+        "realtime_warning": 0.35,
+        "daily_warning": 0.5
+      }
+    },
+    {
+      "metric_id": "classroom_activity_index",
+      "name": "课堂活动指数",
+      "aliases": ["课堂活动", "课堂活动数据", "活跃度", "活动指数"],
+      "intent_weights": {
+        "daily_patrol": 0.7,
+        "realtime_patrol": 0.5
+      }
+    },
+    {
+      "metric_id": "warning_ratio",
+      "name": "预警占比",
+      "aliases": ["预警占比", "预警课堂占比", "风险占比"],
+      "intent_weights": {
+        "realtime_warning": 0.9,
+        "daily_warning": 0.9
+      }
+    },
+    {
+      "metric_id": "warning_level",
+      "name": "风险等级",
+      "aliases": ["风险等级", "预警等级", "整体风险"],
+      "intent_weights": {
+        "realtime_warning": 0.9,
+        "daily_warning": 0.9,
+        "warning_trend": 0.6
+      }
+    },
+    {
+      "metric_id": "warning_type",
+      "name": "预警类型",
+      "aliases": ["预警类型", "风险类型", "告警类型"],
+      "intent_weights": {
+        "realtime_warning": 0.85,
+        "daily_warning": 0.85,
+        "warning_trend": 0.65
+      }
+    },
+    {
+      "metric_id": "focus_classroom_count",
+      "name": "重点关注课堂",
+      "aliases": ["重点关注课堂", "重点课堂", "关注课堂数"],
+      "intent_weights": {
+        "realtime_patrol": 0.8,
+        "daily_patrol": 0.85
+      }
+    },
+    {
+      "metric_id": "vitality_classroom_count",
+      "name": "活力较高课堂",
+      "aliases": ["活力课堂", "活力较高课堂", "活力高课堂"],
+      "intent_weights": {
+        "realtime_patrol": 0.8,
+        "daily_patrol": 0.85
+      }
+    },
+    {
+      "metric_id": "patrol_round_progress",
+      "name": "巡查进度",
+      "aliases": ["巡查轮次", "巡课轮次", "巡查进度", "节次进度"],
+      "intent_weights": {
+        "realtime_patrol": 0.95,
+        "realtime_warning": 0.5
+      }
+    }
+  ]
+}

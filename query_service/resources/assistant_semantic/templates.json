@@ -1,0 +1,98 @@
+{
+  "version": "v1",
+  "items": [
+    {
+      "intent": "realtime_patrol",
+      "template_ids": [
+        "tpl_patrol_overview_realtime",
+        "tpl_patrol_org_risk_rank",
+        "tpl_patrol_focus_top",
+        "tpl_patrol_vitality_top"
+      ],
+      "execute_bucket": "realtime_patrol"
+    },
+    {
+      "intent": "daily_patrol",
+      "template_ids": [
+        "tpl_patrol_overview_daily_finished",
+        "tpl_patrol_section_distribution",
+        "tpl_patrol_org_risk_rank",
+        "tpl_patrol_focus_top",
+        "tpl_patrol_vitality_top"
+      ],
+      "execute_bucket": "daily_patrol"
+    },
+    {
+      "intent": "realtime_warning",
+      "template_ids": [
+        "tpl_warning_overview_realtime",
+        "tpl_warning_type_distribution",
+        "tpl_warning_level_distribution",
+        "tpl_warning_course_top",
+        "tpl_warning_org_top"
+      ],
+      "execute_bucket": "realtime_warning"
+    },
+    {
+      "intent": "daily_warning",
+      "template_ids": [
+        "tpl_warning_overview_daily_finished",
+        "tpl_warning_type_distribution",
+        "tpl_warning_level_distribution",
+        "tpl_warning_course_top",
+        "tpl_warning_org_top"
+      ],
+      "execute_bucket": "daily_warning"
+    },
+    {
+      "intent": "warning_handle",
+      "template_ids": ["tpl_warning_handle_status", "tpl_warning_handle_sla"],
+      "execute_bucket": "warning_handle"
+    },
+    {
+      "intent": "warning_trend",
+      "template_ids": ["tpl_warning_trend_7d", "tpl_warning_type_distribution"],
+      "execute_bucket": "warning_trend"
+    },
+    {
+      "intent": "strategy_effect",
+      "template_ids": ["tpl_strategy_rule_trigger"],
+      "execute_bucket": "strategy_effect"
+    },
+    {
+      "intent": "teacher_risk",
+      "template_ids": ["tpl_teacher_risk_top_7d"],
+      "execute_bucket": "teacher_risk"
+    },
+    {
+      "intent": "classroom_health",
+      "template_ids": ["tpl_classroom_health_overview"],
+      "execute_bucket": "classroom_health"
+    },
+    {
+      "intent": "device_ops",
+      "template_ids": ["tpl_device_ops_overview"],
+      "execute_bucket": "device_ops"
+    },
+    {
+      "intent": "sensitive_word",
+      "template_ids": ["tpl_sensitive_word_30d"],
+      "execute_bucket": "sensitive_word"
+    },
+    {
+      "intent": "warning_video_trace",
+      "template_ids": ["tpl_warning_video_latest_match"],
+      "execute_bucket": "warning_video_trace"
+    },
+    {
+      "intent": "metric_definition",
+      "template_ids": [],
+      "execute_bucket": "general"
+    },
+    {
+      "intent": "general",
+      "template_ids": [],
+      "execute_bucket": "general"
+    }
+  ]
+}

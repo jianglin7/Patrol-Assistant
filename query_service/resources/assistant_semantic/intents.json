@@ -1,0 +1,117 @@
+{
+  "version": "v1",
+  "items": [
+    {
+      "intent": "realtime_patrol",
+      "bucket": "realtime_patrol",
+      "aliases": ["实时AI巡课", "实时巡课", "当前巡课", "在课巡课"],
+      "keywords": ["实时", "当前", "正在上课", "在课", "此刻"],
+      "default_time_scope": "today_live",
+      "family": "patrol"
+    },
+    {
+      "intent": "daily_patrol",
+      "bucket": "daily_patrol",
+      "aliases": ["今日AI巡课", "今日巡课", "巡课汇总", "非课表巡课"],
+      "keywords": ["今日", "汇总", "已结束", "已完成", "非课表"],
+      "default_time_scope": "today_finished",
+      "family": "patrol"
+    },
+    {
+      "intent": "realtime_warning",
+      "bucket": "realtime_warning",
+      "aliases": ["实时预警", "实时告警", "当前预警"],
+      "keywords": ["实时", "当前", "近2小时", "进行中"],
+      "default_time_scope": "near_2h",
+      "family": "warning"
+    },
+    {
+      "intent": "daily_warning",
+      "bucket": "daily_warning",
+      "aliases": ["今日预警", "预警汇总", "课堂预警汇总"],
+      "keywords": ["今日", "汇总", "已结束", "当天"],
+      "default_time_scope": "today_finished",
+      "family": "warning"
+    },
+    {
+      "intent": "warning_handle",
+      "bucket": "warning_handle",
+      "aliases": ["预警处置", "处置闭环", "处理闭环"],
+      "keywords": ["闭环", "待处理", "挂起", "处理效率"],
+      "default_time_scope": "today",
+      "family": "warning"
+    },
+    {
+      "intent": "warning_trend",
+      "bucket": "warning_trend",
+      "aliases": ["预警趋势", "风险趋势", "近7天预警"],
+      "keywords": ["趋势", "近7天", "周趋势", "高频"],
+      "default_time_scope": "last_7d",
+      "family": "warning"
+    },
+    {
+      "intent": "strategy_effect",
+      "bucket": "strategy_effect",
+      "aliases": ["阈值效果", "策略效果", "规则触发"],
+      "keywords": ["阈值", "策略", "触发频次"],
+      "default_time_scope": "last_7d",
+      "family": "warning"
+    },
+    {
+      "intent": "teacher_risk",
+      "bucket": "teacher_risk",
+      "aliases": ["教师风险画像", "教师风险", "教师异常排行"],
+      "keywords": ["教师", "任课教师", "画像"],
+      "default_time_scope": "last_7d",
+      "family": "warning"
+    },
+    {
+      "intent": "classroom_health",
+      "bucket": "classroom_health",
+      "aliases": ["教室健康度", "空闲异常", "教室状态"],
+      "keywords": ["教室", "空闲", "健康度"],
+      "default_time_scope": "near_2h",
+      "family": "ops"
+    },
+    {
+      "intent": "device_ops",
+      "bucket": "device_ops",
+      "aliases": ["设备运维", "设备巡检", "设备异常"],
+      "keywords": ["设备", "运维", "巡检"],
+      "default_time_scope": "last_3d",
+      "family": "ops"
+    },
+    {
+      "intent": "sensitive_word",
+      "bucket": "sensitive_word",
+      "aliases": ["敏感词预警", "涉敏预警", "敏感词统计"],
+      "keywords": ["敏感词", "涉敏"],
+      "default_time_scope": "last_30d",
+      "family": "warning"
+    },
+    {
+      "intent": "warning_video_trace",
+      "bucket": "warning_video_trace",
+      "aliases": ["预警回看", "视频回看区间", "预警视频"],
+      "keywords": ["回看", "录像", "视频"],
+      "default_time_scope": "latest",
+      "family": "warning"
+    },
+    {
+      "intent": "metric_definition",
+      "bucket": "general",
+      "aliases": ["指标口径", "指标定义", "是什么意思"],
+      "keywords": ["定义", "口径", "怎么算", "什么意思"],
+      "default_time_scope": "none",
+      "family": "kb"
+    },
+    {
+      "intent": "general",
+      "bucket": "general",
+      "aliases": ["通用", "闲聊"],
+      "keywords": [],
+      "default_time_scope": "none",
+      "family": "general"
+    }
+  ]
+}

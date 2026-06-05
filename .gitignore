@@ -9,3 +9,15 @@ __pycache__/
 .Python
 .venv/
 venv/
+
+cat >> .gitignore <<'EOF'
+
+# large local files
+*.tar
+*.zip
+bak.zip
+jy_digital_patrol.sql
+jy_course_he_sync.sql
+query_service/jy_digital_patrol.sql
+query_service/patrol-assistant-*.tar
+EOF
